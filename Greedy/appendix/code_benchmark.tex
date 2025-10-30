@@ -1,0 +1,300 @@
+\begin{lstlisting}[caption={Benchmark and plotting harness},label={lst:ev-benchmark}]
+"""Benchmarking utilities for the greedy EV planner."""
+
+from __future__ import annotations
+
+import csv
+import math
+import platform
+import statistics
+import time
+from datetime import datetime
+from pathlib import Path
+from typing import Iterable, List, Tuple
+
+import matplotlib
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+
+from .ev_greedy import plan_stops, plan_stops_sorted
+
+
+def generate_route(
+    n_stations: int,
+    D: float,
+    R: float,
+    pattern: str = "uniform",
+    seed: int | None = None,
+) -> Tuple[List[float], float, float]:
+    """Generate synthetic station layouts for experiments."""
+
+    if n_stations < 0:
+        raise ValueError("n_stations must be non-negative")
+    if D <= 0:
+        raise ValueError("D must be positive")
+    if R <= 0:
+        raise ValueError("R must be positive")
+
+    prng = random_random(seed)
+    spacing = D / (n_stations + 1) if n_stations else D
+
+    if pattern == "uniform":
+        base = [(i + 1) * spacing for i in range(n_stations)]
+        jitter = 0.25 * spacing
+        positions = [
+            max(1e-6, min(D - 1e-6, pos + prng.uniform(-jitter, jitter)))
+            for pos in base
+        ]
+    elif pattern == "clustered":
+        clusters = max(1, min(n_stations, 4))
+        positions = []
+        cluster_sizes = _even_split(n_stations, clusters)
+        band = 0.15 * D / clusters
+        for cluster_idx, size in enumerate(cluster_sizes):
+            center = (cluster_idx + 1) * D / (clusters + 1)
+            for _ in range(size):
+                offset = prng.uniform(-band, band)
+                positions.append(max(1e-6, min(D - 1e-6, center + offset)))
+    elif pattern == "random":
+        positions = [
+            ((i + prng.random()) / (n_stations + 1)) * D for i in range(n_stations)
+        ]
+    else:
+        raise ValueError(f"unknown pattern '{pattern}'")
+
+    positions.sort()
+    _make_strictly_increasing(positions, D)
+    return positions, float(D), float(R)
+
+
+def _even_split(total: int, parts: int) -> List[int]:
+    base = total // parts
+    remainder = total % parts
+    sizes = [base] * parts
+    for i in range(remainder):
+        sizes[i] += 1
+    return sizes
+
+
+def _make_strictly_increasing(positions: List[float], D: float) -> None:
+    epsilon = D * 1e-9 if D > 1 else 1e-9
+    for i in range(1, len(positions)):
+        if positions[i] <= positions[i - 1]:
+            positions[i] = min(D - epsilon, positions[i - 1] + epsilon)
+
+
+def random_random(seed: int | None):
+    """Return a reproducible random.Random-like generator."""
+
+    import random
+
+    return random.Random(seed)
+
+
+def _ensure_dirs() -> tuple[Path, Path]:
+    root = Path(__file__).resolve().parent
+    figures = root / "figures"
+    results = root / "results"
+    figures.mkdir(parents=True, exist_ok=True)
+    results.mkdir(parents=True, exist_ok=True)
+    return figures, results
+
+
+def _median_time(func, *args, repeats: int = 5) -> float:
+    samples = []
+    for _ in range(repeats):
+        start = time.perf_counter()
+        func(*args)
+        samples.append(time.perf_counter() - start)
+    return statistics.median(samples)
+
+
+def _write_csv(path: Path, headers: Iterable[str], rows: Iterable[Iterable[object]]) -> None:
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(headers)
+        for row in rows:
+            writer.writerow(row)
+
+
+def _save_environment_report(results_dir: Path) -> None:
+    info = {
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "python": platform.python_version(),
+        "platform": platform.platform(),
+    }
+    path = results_dir / "environment.txt"
+    with path.open("w", encoding="utf-8") as handle:
+        for key, value in info.items():
+            handle.write(f"{key}: {value}\n")
+
+
+def _build_reference_curve(
+    scale_point: tuple[int, float],
+    xs: List[int],
+    transform,
+) -> List[float]:
+    n0, t0 = scale_point
+    denom = transform(n0)
+    coeff = t0 / denom if denom else 0.0
+    return [coeff * transform(x) for x in xs]
+
+
+def run_runtime_benchmarks(figures: Path, results: Path) -> None:
+    """Measure runtime scaling for presorted vs. unsorted inputs and plot O(n)/O(n log n) references."""
+    sizes = [1000, 2000, 5000, 10000, 20000, 50000]
+    repeats = 5
+    pattern = "uniform"
+    D = 1000.0
+    R = 150.0
+
+    unsorted_records = []
+    sorted_records = []
+
+    for idx, n in enumerate(sizes):
+        stations, dest, vehicle_range = generate_route(
+            n,
+            D,
+            R,
+            pattern=pattern,
+            seed=idx,
+        )
+        unsorted_positions = list(reversed(stations))
+
+        # Unsorted list forces plan_stops to sort internally, reflecting O(n log n).
+        t_unsorted = _median_time(
+            plan_stops,
+            unsorted_positions,
+            dest,
+            vehicle_range,
+            False,
+            repeats=repeats,
+        )
+        t_sorted = _median_time(
+            plan_stops_sorted,
+            stations,
+            dest,
+            vehicle_range,
+            repeats=repeats,
+        )
+
+        unsorted_records.append((n, t_unsorted))
+        sorted_records.append((n, t_sorted))
+
+    _write_csv(results / "times_unsorted.csv", ("n", "seconds"), unsorted_records)
+    _write_csv(results / "times_sorted.csv", ("n", "seconds"), sorted_records)
+
+    if sorted_records:
+        reference_linear = _build_reference_curve(
+            sorted_records[0],
+            sizes,
+            lambda x: float(x),
+        )
+    else:
+        reference_linear = [0.0 for _ in sizes]
+    if unsorted_records:
+        reference_nlogn = _build_reference_curve(
+            unsorted_records[0],
+            sizes,
+            lambda x: float(x) * math.log2(max(2, x)),
+        )
+    else:
+        reference_nlogn = [0.0 for _ in sizes]
+
+    _plot_runtime(
+        sizes,
+        [value for _, value in sorted_records],
+        reference_linear,
+        figures / "runtime_vs_n_sorted.png",
+        figures / "runtime_vs_n_sorted.pdf",
+        title="Greedy scan runtime (expected O(n))",
+        ylabel="seconds",
+        legend=("measured", "c · n"),
+    )
+    _plot_runtime(
+        sizes,
+        [value for _, value in unsorted_records],
+        reference_nlogn,
+        figures / "runtime_vs_n_unsorted.png",
+        figures / "runtime_vs_n_unsorted.pdf",
+        title="Greedy runtime with sorting (expected O(n log n))",
+        ylabel="seconds",
+        legend=("measured", "c · n log n"),
+    )
+
+
+def _plot_runtime(
+    xs: List[int],
+    ys: List[float],
+    reference: List[float],
+    png_path: Path,
+    pdf_path: Path,
+    title: str,
+    ylabel: str,
+    legend: Tuple[str, str],
+) -> None:
+    plt.figure(figsize=(6, 4))
+    plt.plot(xs, ys, marker="o", label=legend[0])
+    plt.plot(xs, reference, linestyle="--", label=legend[1])
+    plt.xlabel("number of stations (n)")
+    plt.ylabel(ylabel)
+    plt.title(title)
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(png_path, dpi=200)
+    plt.savefig(pdf_path)
+    plt.close()
+
+
+def run_stops_vs_range(figures: Path, results: Path) -> None:
+    """Evaluate how the greedy planner's stop count changes as vehicle range increases."""
+    n = 300
+    D = 600.0
+    base_R = 80.0
+    stations, dest, _ = generate_route(
+        n,
+        D,
+        base_R,
+        pattern="clustered",
+        seed=42,
+    )
+
+    ranges = [40.0 + step * 5.0 for step in range(4, 25)]
+    rows = []
+    counts = []
+    numeric_ranges = []
+
+    for R in ranges:
+        try:
+            stops = plan_stops_sorted(stations, dest, R)
+            rows.append((R, len(stops)))
+            counts.append(len(stops))
+        except ValueError:
+            rows.append((R, "infeasible"))
+            counts.append(math.nan)
+        numeric_ranges.append(R)
+
+    _write_csv(results / "stops_vs_R.csv", ("R", "stops"), rows)
+
+    plt.figure(figsize=(6, 4))
+    plt.plot(numeric_ranges, counts, marker="o")
+    plt.xlabel("vehicle range R")
+    plt.ylabel("number of charging stops")
+    plt.title("Stops required as R varies")
+    plt.tight_layout()
+    plt.savefig(figures / "stops_vs_R.png", dpi=200)
+    plt.savefig(figures / "stops_vs_R.pdf")
+    plt.close()
+
+
+def main() -> None:
+    figures, results = _ensure_dirs()
+    run_runtime_benchmarks(figures, results)
+    run_stops_vs_range(figures, results)
+    _save_environment_report(results)
+
+
+if __name__ == "__main__":
+    main()
+\end{lstlisting}

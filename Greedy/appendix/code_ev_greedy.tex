@@ -1,0 +1,159 @@
+\begin{lstlisting}[caption={Greedy EV planner implementation},label={lst:ev-greedy}]
+"""Greedy EV highway trip planner."""
+
+from __future__ import annotations
+
+import argparse
+from typing import Iterable, List
+
+
+def plan_stops(
+    positions: Iterable[float],
+    D: float,
+    R: float,
+    assume_sorted: bool = False,
+) -> List[float]:
+    """Return the minimal set of charging stops for the trip.
+
+    Args:
+        positions: Iterable of station mile markers in (0, D).
+        D: Destination distance from the origin.
+        R: Maximum travel distance on a full charge.
+        assume_sorted: If True, positions must be strictly increasing.
+
+    Returns:
+        List of station mile markers at which to stop.
+
+    Edge Cases:
+        Returns [] when D == 0 or the destination is within range, and raises
+        ValueError("infeasible") when no sequence of reachable stations reaches D.
+
+    Raises:
+        ValueError: If inputs are invalid or the route is infeasible.
+
+    Complexity:
+        O(n) when positions are presorted; O(n log n) otherwise.
+    """
+
+    sorted_positions = list(positions)
+    if not assume_sorted:
+        sorted_positions.sort()
+    else:
+        _validate_sorted_positions(sorted_positions, D)
+
+    return plan_stops_sorted(sorted_positions, D, R)
+
+
+def plan_stops_sorted(sorted_positions: List[float], D: float, R: float) -> List[float]:
+    """Greedy scan assuming stations are strictly increasing.
+
+    Args:
+        sorted_positions: Station mile markers in (0, D), strictly increasing.
+        D: Destination distance from the origin.
+        R: Maximum travel distance on a full charge.
+
+    Returns:
+        List of stop positions with minimum cardinality.
+
+    Edge Cases:
+        Returns [] when D == 0 or directly reachable from the origin, and raises
+        ValueError("infeasible") when no station lies within reach of the next hop.
+
+    Raises:
+        ValueError: If inputs are invalid or the route is infeasible.
+    """
+
+    _validate_sorted_positions(sorted_positions, D)
+    if R <= 0:
+        raise ValueError("range must be positive")
+    if D < 0:
+        raise ValueError("destination must be non-negative")
+    if D == 0:
+        return []
+
+    stops: List[float] = []
+    reach_limit = R
+    idx = 0
+    n = len(sorted_positions)
+
+    while reach_limit < D:
+        best_station = None
+        while idx < n and sorted_positions[idx] <= reach_limit:
+            best_station = sorted_positions[idx]
+            idx += 1
+
+        if best_station is None:
+            raise ValueError("infeasible")
+
+        stops.append(best_station)
+        reach_limit = best_station + R
+
+    return stops
+
+
+def _validate_sorted_positions(positions: List[float], D: float) -> None:
+    """Validate that stations lie strictly inside (0, D) and are increasing."""
+
+    if D < 0:
+        raise ValueError("destination must be non-negative")
+
+    last = 0.0
+    for pos in positions:
+        if pos <= 0 or pos >= D:
+            raise ValueError("station positions must lie strictly between 0 and D")
+        if pos <= last:
+            raise ValueError("station positions must be strictly increasing")
+        last = pos
+
+
+def _parse_stations(raw: str) -> List[float]:
+    if not raw:
+        return []
+    return [float(token) for token in raw.split(",") if token.strip()]
+
+
+def _run_cli() -> None:
+    parser = argparse.ArgumentParser(
+        description="Greedy EV trip planner",
+        epilog="Example: python -m Greedy.ev_greedy --stations 50,120 --D 200 --R 80",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument(
+        "--stations",
+        default="",
+        help="Comma-separated station mile markers (no 0 or D).",
+    )
+    parser.add_argument("--D", type=float, required=True, help="Destination distance.")
+    parser.add_argument("--R", type=float, required=True, help="Vehicle range.")
+    parser.add_argument(
+        "--assume-sorted",
+        action="store_true",
+        help="Treat stations as pre-sorted (strictly increasing).",
+    )
+    parser.add_argument(
+        "--print-stops",
+        action="store_true",
+        help="Print stop locations in addition to the count.",
+    )
+    args = parser.parse_args()
+
+    stations = _parse_stations(args.stations)
+    try:
+        stops = plan_stops(
+            stations,
+            D=args.D,
+            R=args.R,
+            assume_sorted=args.assume_sorted,
+        )
+    except ValueError as exc:
+        print("infeasible" if str(exc) == "infeasible" else f"error: {exc}")
+        raise SystemExit(1)
+
+    print(f"stops required: {len(stops)}")
+    if args.print_stops:
+        print("stop positions:", ", ".join(f"{stop:.3f}" for stop in stops))
+
+
+if __name__ == "__main__":
+    _run_cli()
+\end{lstlisting}
