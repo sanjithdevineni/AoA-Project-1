@@ -1,0 +1,311 @@
+"""Benchmarking utilities for the divide-and-conquer maximum subarray."""
+
+from __future__ import annotations
+
+import csv
+import math
+import platform
+import statistics
+import sys
+import time
+from datetime import datetime
+from pathlib import Path
+from typing import Iterable, List, Tuple
+
+# Handle imports whether run as script or module
+if __name__ == "__main__" and __package__ is None:
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import matplotlib
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+
+from max_subarray_dc import max_subarray, max_subarray_dc, _kadane
+
+
+def generate_profit_data(
+    n: int,
+    pattern: str = "mixed",
+    seed: int | None = None,
+) -> List[float]:
+    """Generate synthetic daily profit/loss data for experiments."""
+    if n < 0:
+        raise ValueError("n must be non-negative")
+
+    prng = _random_random(seed)
+
+    if pattern == "mixed":
+        # Mix of positive and negative values with moderate variance
+        return [prng.uniform(-10.0, 15.0) for _ in range(n)]
+    elif pattern == "volatile":
+        # High variance with larger swings
+        return [prng.uniform(-50.0, 50.0) for _ in range(n)]
+    elif pattern == "positive_bias":
+        # More positive than negative (profitable business)
+        return [prng.uniform(-5.0, 20.0) for _ in range(n)]
+    elif pattern == "negative_bias":
+        # More negative than positive (struggling business)
+        return [prng.uniform(-20.0, 5.0) for _ in range(n)]
+    elif pattern == "alternating":
+        # Alternating pattern for predictable structure
+        return [
+            prng.uniform(5.0, 15.0) if i % 2 == 0 else prng.uniform(-15.0, -5.0)
+            for i in range(n)
+        ]
+    else:
+        raise ValueError(f"unknown pattern '{pattern}'")
+
+
+def _random_random(seed: int | None):
+    """Return a reproducible random.Random-like generator."""
+    import random
+
+    return random.Random(seed)
+
+
+def _ensure_dirs() -> tuple[Path, Path]:
+    """Create output directories."""
+    root = Path(__file__).resolve().parent
+    figures = root / "figures"
+    results = root / "results"
+    figures.mkdir(parents=True, exist_ok=True)
+    results.mkdir(parents=True, exist_ok=True)
+    return figures, results
+
+
+def _median_time(func, *args, repeats: int = 5) -> float:
+    """Measure median execution time over multiple runs."""
+    samples = []
+    for _ in range(repeats):
+        start = time.perf_counter()
+        func(*args)
+        samples.append(time.perf_counter() - start)
+    return statistics.median(samples)
+
+
+def _write_csv(
+    path: Path, headers: Iterable[str], rows: Iterable[Iterable[object]]
+) -> None:
+    """Write CSV file with headers and rows."""
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(headers)
+        for row in rows:
+            writer.writerow(row)
+
+
+def _save_environment_report(results_dir: Path) -> None:
+    """Save execution environment information."""
+    from datetime import timezone
+    
+    info = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "python": platform.python_version(),
+        "platform": platform.platform(),
+    }
+    path = results_dir / "environment.txt"
+    with path.open("w", encoding="utf-8") as handle:
+        for key, value in info.items():
+            handle.write(f"{key}: {value}\n")
+
+
+def _build_reference_curve(
+    scale_point: tuple[int, float],
+    xs: List[int],
+    transform,
+) -> List[float]:
+    """Build theoretical complexity reference curve."""
+    n0, t0 = scale_point
+    denom = transform(n0)
+    coeff = t0 / denom if denom else 0.0
+    return [coeff * transform(x) for x in xs]
+
+
+def run_runtime_benchmarks(figures: Path, results: Path) -> None:
+    """Measure runtime scaling for D&C vs Kadane's algorithm."""
+    sizes = [1000, 2000, 5000, 10000, 20000, 50000]
+    repeats = 5
+    pattern = "mixed"
+
+    dc_records = []
+    kadane_records = []
+    naive_records = []
+
+    for idx, n in enumerate(sizes):
+        values = generate_profit_data(n, pattern=pattern, seed=idx)
+
+        # Measure divide-and-conquer (O(n log n))
+        t_dc = _median_time(max_subarray_dc, values, 0, len(values) - 1, repeats=repeats)
+        dc_records.append((n, t_dc))
+
+        # Measure Kadane's algorithm (O(n))
+        t_kadane = _median_time(_kadane, values, repeats=repeats)
+        kadane_records.append((n, t_kadane))
+
+        # Measure naive for small sizes only (O(n²))
+        if n <= 5000:
+            sys.path.insert(0, str(Path(__file__).resolve().parent))
+            from naive_baseline import max_subarray_naive
+
+            t_naive = _median_time(max_subarray_naive, values, repeats=repeats)
+            naive_records.append((n, t_naive))
+
+    _write_csv(results / "times_dc.csv", ("n", "seconds"), dc_records)
+    _write_csv(results / "times_kadane.csv", ("n", "seconds"), kadane_records)
+    _write_csv(results / "times_naive.csv", ("n", "seconds"), naive_records)
+
+    # Build reference curves
+    if dc_records:
+        reference_nlogn = _build_reference_curve(
+            dc_records[0],
+            sizes,
+            lambda x: float(x) * math.log2(max(2, x)),
+        )
+    else:
+        reference_nlogn = [0.0 for _ in sizes]
+
+    if kadane_records:
+        reference_linear = _build_reference_curve(
+            kadane_records[0],
+            sizes,
+            lambda x: float(x),
+        )
+    else:
+        reference_linear = [0.0 for _ in sizes]
+
+    if naive_records:
+        naive_sizes = [n for n, _ in naive_records]
+        reference_quadratic = _build_reference_curve(
+            naive_records[0],
+            naive_sizes,
+            lambda x: float(x) ** 2,
+        )
+    else:
+        naive_sizes = []
+        reference_quadratic = []
+
+    # Plot D&C runtime
+    _plot_runtime(
+        sizes,
+        [t for _, t in dc_records],
+        reference_nlogn,
+        figures / "runtime_vs_n_dc.png",
+        figures / "runtime_vs_n_dc.pdf",
+        title="Divide-and-Conquer runtime (expected O(n log n))",
+        ylabel="seconds",
+        legend=("measured", "c · n log n"),
+    )
+
+    # Plot Kadane's runtime
+    _plot_runtime(
+        sizes,
+        [t for _, t in kadane_records],
+        reference_linear,
+        figures / "runtime_vs_n_kadane.png",
+        figures / "runtime_vs_n_kadane.pdf",
+        title="Kadane's algorithm runtime (expected O(n))",
+        ylabel="seconds",
+        legend=("measured", "c · n"),
+    )
+
+    # Plot naive runtime
+    if naive_records:
+        _plot_runtime(
+            naive_sizes,
+            [t for _, t in naive_records],
+            reference_quadratic,
+            figures / "runtime_vs_n_naive.png",
+            figures / "runtime_vs_n_naive.pdf",
+            title="Naive algorithm runtime (expected O(n²))",
+            ylabel="seconds",
+            legend=("measured", "c · n²"),
+        )
+
+    # Comparison plot
+    _plot_comparison(
+        sizes,
+        dc_records,
+        kadane_records,
+        figures / "runtime_comparison.png",
+        figures / "runtime_comparison.pdf",
+    )
+
+
+def _plot_runtime(
+    xs: List[int],
+    ys: List[float],
+    reference: List[float],
+    png_path: Path,
+    pdf_path: Path,
+    title: str,
+    ylabel: str,
+    legend: Tuple[str, str],
+) -> None:
+    """Plot runtime with theoretical reference curve."""
+    plt.figure(figsize=(6, 4))
+    plt.plot(xs, ys, marker="o", label=legend[0])
+    plt.plot(xs, reference, linestyle="--", label=legend[1])
+    plt.xlabel("input size (n)")
+    plt.ylabel(ylabel)
+    plt.title(title)
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(png_path, dpi=200)
+    plt.savefig(pdf_path)
+    plt.close()
+
+
+def _plot_comparison(
+    sizes: List[int],
+    dc_records: List[Tuple[int, float]],
+    kadane_records: List[Tuple[int, float]],
+    png_path: Path,
+    pdf_path: Path,
+) -> None:
+    """Plot comparison of D&C vs Kadane's algorithm."""
+    plt.figure(figsize=(6, 4))
+    plt.plot(sizes, [t for _, t in dc_records], marker="o", label="D&C O(n log n)")
+    plt.plot(sizes, [t for _, t in kadane_records], marker="s", label="Kadane O(n)")
+    plt.xlabel("input size (n)")
+    plt.ylabel("seconds")
+    plt.title("Algorithm Comparison")
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(png_path, dpi=200)
+    plt.savefig(pdf_path)
+    plt.close()
+
+
+def run_profit_window_analysis(figures: Path, results: Path) -> None:
+    """Analyze how max profit window changes with different data patterns."""
+    n = 365  # One year of daily data
+    patterns = ["mixed", "volatile", "positive_bias", "negative_bias", "alternating"]
+
+    rows = []
+    for pattern in patterns:
+        values = generate_profit_data(n, pattern=pattern, seed=42)
+        start, end, total = max_subarray_dc(values, 0, len(values) - 1)
+        window_size = end - start + 1 if start >= 0 else 0
+        avg_daily = total / window_size if window_size > 0 else 0.0
+
+        rows.append((pattern, start, end, window_size, f"{total:.2f}", f"{avg_daily:.2f}"))
+
+    _write_csv(
+        results / "profit_windows.csv",
+        ("pattern", "start_day", "end_day", "window_days", "total_profit", "avg_daily"),
+        rows,
+    )
+
+
+def main() -> None:
+    """Run all benchmarks and generate outputs."""
+    figures, results = _ensure_dirs()
+    run_runtime_benchmarks(figures, results)
+    run_profit_window_analysis(figures, results)
+    _save_environment_report(results)
+    print("Benchmarks complete. Results saved to 'results/' and 'figures/' directories.")
+
+
+if __name__ == "__main__":
+    main()

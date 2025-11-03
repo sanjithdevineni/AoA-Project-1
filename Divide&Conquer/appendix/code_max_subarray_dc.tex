@@ -1,0 +1,201 @@
+\begin{lstlisting}[caption={Divide-and-conquer maximum subarray implementation},label={lst:dc-max-subarray}]
+"""Divide-and-conquer maximum subarray algorithm."""
+
+from __future__ import annotations
+
+import argparse
+from typing import List, Tuple
+
+
+def max_subarray(values: List[float], use_dc: bool = True) -> Tuple[int, int, float]:
+    """Find the contiguous subarray with the maximum sum.
+
+    Args:
+        values: List of daily profit/loss values.
+        use_dc: If True, use divide-and-conquer; otherwise use Kadane's algorithm.
+
+    Returns:
+        Tuple (start_idx, end_idx, max_sum) where indices are inclusive.
+
+    Edge Cases:
+        Returns (0, 0, values[0]) for single element.
+        Returns (-1, -1, 0.0) for empty array.
+
+    Raises:
+        ValueError: If inputs are invalid.
+
+    Complexity:
+        O(n log n) for divide-and-conquer, O(n) for Kadane's algorithm.
+    """
+    if not values:
+        return -1, -1, 0.0
+
+    if use_dc:
+        return max_subarray_dc(values, 0, len(values) - 1)
+    else:
+        return _kadane(values)
+
+
+def max_subarray_dc(
+    values: List[float], left: int, right: int
+) -> Tuple[int, int, float]:
+    """Divide-and-conquer implementation of maximum subarray.
+
+    Args:
+        values: List of profit/loss values.
+        left: Left boundary index (inclusive).
+        right: Right boundary index (inclusive).
+
+    Returns:
+        Tuple (start_idx, end_idx, max_sum) for the subarray [start:end+1].
+
+    Complexity:
+        T(n) = 2T(n/2) + O(n) = O(n log n)
+    """
+    if left > right:
+        return -1, -1, float("-inf")
+
+    if left == right:
+        return left, right, values[left]
+
+    mid = (left + right) // 2
+
+    # Find max subarray in left half
+    left_start, left_end, left_sum = max_subarray_dc(values, left, mid)
+
+    # Find max subarray in right half
+    right_start, right_end, right_sum = max_subarray_dc(values, mid + 1, right)
+
+    # Find max subarray crossing the midpoint
+    cross_start, cross_end, cross_sum = _max_crossing_subarray(values, left, mid, right)
+
+    # Return the maximum of the three
+    if left_sum >= right_sum and left_sum >= cross_sum:
+        return left_start, left_end, left_sum
+    elif right_sum >= left_sum and right_sum >= cross_sum:
+        return right_start, right_end, right_sum
+    else:
+        return cross_start, cross_end, cross_sum
+
+
+def _max_crossing_subarray(
+    values: List[float], left: int, mid: int, right: int
+) -> Tuple[int, int, float]:
+    """Find maximum subarray crossing the midpoint.
+
+    Args:
+        values: List of profit/loss values.
+        left: Left boundary index.
+        mid: Midpoint index.
+        right: Right boundary index.
+
+    Returns:
+        Tuple (start_idx, end_idx, max_sum) for the crossing subarray.
+
+    Complexity:
+        O(n) where n = right - left + 1
+    """
+    # Find max sum extending leftward from mid
+    left_sum = float("-inf")
+    current_sum = 0.0
+    max_left = mid
+
+    for i in range(mid, left - 1, -1):
+        current_sum += values[i]
+        if current_sum > left_sum:
+            left_sum = current_sum
+            max_left = i
+
+    # Find max sum extending rightward from mid+1
+    right_sum = float("-inf")
+    current_sum = 0.0
+    max_right = mid + 1
+
+    for j in range(mid + 1, right + 1):
+        current_sum += values[j]
+        if current_sum > right_sum:
+            right_sum = current_sum
+            max_right = j
+
+    return max_left, max_right, left_sum + right_sum
+
+
+def _kadane(values: List[float]) -> Tuple[int, int, float]:
+    """Kadane's algorithm for maximum subarray (O(n) baseline).
+
+    Args:
+        values: List of profit/loss values.
+
+    Returns:
+        Tuple (start_idx, end_idx, max_sum).
+    """
+    if not values:
+        return -1, -1, 0.0
+
+    max_sum = values[0]
+    max_start = 0
+    max_end = 0
+
+    current_sum = values[0]
+    current_start = 0
+
+    for i in range(1, len(values)):
+        if current_sum < 0:
+            current_sum = values[i]
+            current_start = i
+        else:
+            current_sum += values[i]
+
+        if current_sum > max_sum:
+            max_sum = current_sum
+            max_start = current_start
+            max_end = i
+
+    return max_start, max_end, max_sum
+
+
+def _parse_values(raw: str) -> List[float]:
+    """Parse comma-separated profit/loss values."""
+    if not raw:
+        return []
+    return [float(token) for token in raw.split(",") if token.strip()]
+
+
+def _run_cli() -> None:
+    """Command-line interface for maximum subarray problem."""
+    parser = argparse.ArgumentParser(
+        description="Maximum subarray solver",
+        epilog="Example: python -m DivideConquer.max_subarray_dc --values -2,1,-3,4,-1,2,1,-5,4",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument(
+        "--values",
+        default="",
+        help="Comma-separated daily profit/loss values.",
+    )
+    parser.add_argument(
+        "--use-kadane",
+        action="store_true",
+        help="Use Kadane's O(n) algorithm instead of divide-and-conquer.",
+    )
+    args = parser.parse_args()
+
+    values = _parse_values(args.values)
+    if not values:
+        print("error: no values provided")
+        raise SystemExit(1)
+
+    try:
+        start, end, total = max_subarray(values, use_dc=not args.use_kadane)
+        print(f"Best window: day {start} to day {end}")
+        print(f"Total profit: {total:.2f}")
+        if start >= 0 and end >= 0:
+            print(f"Window values: {values[start:end+1]}")
+    except Exception as exc:
+        print(f"error: {exc}")
+        raise SystemExit(1)
+
+
+if __name__ == "__main__":
+    _run_cli()
+\end{lstlisting}
