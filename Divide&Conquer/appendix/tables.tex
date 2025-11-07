@@ -1,58 +1,53 @@
 % Run `python benchmark.py` from within Divide&Conquer folder before including these tables.
-\begin{table}[ht]
+
+\begin{table}[H]
 \centering
-\begin{tabular}{r r}
- n & seconds \\
- \hline
- 1000 & 0.001802199985831976 \\
- 2000 & 0.0038125000428408384 \\
- 5000 & 0.009679800132289529 \\
- 10000 & 0.03591219987720251 \\
- 20000 & 0.07580380002036691 \\
-\end{tabular}
+\pgfplotstabletypeset[
+  col sep=comma,
+  string type,
+  columns={n,seconds},
+  every head row/.style={before row=\toprule, after row=\midrule},
+  every last row/.style={after row=\bottomrule}
+]{Divide&Conquer/results/times_dc.csv}
 \caption{Runtime results for divide-and-conquer algorithm}
 \label{tab:dc-runtime}
 \end{table}
 
-\begin{table}[ht]
+\begin{table}[H]
 \centering
-\begin{tabular}{r r}
- n & seconds \\
- \hline
- 1000 & 8.899997919797897e-05 \\
- 2000 & 0.00017770007252693176 \\
- 5000 & 0.00043729995377361774 \\
- 10000 & 0.001070600003004074 \\
- 20000 & 0.001771500101312995 \\
-\end{tabular}
+\pgfplotstabletypeset[
+  col sep=comma,
+  string type,
+  columns={n,seconds},
+  every head row/.style={before row=\toprule, after row=\midrule},
+  every last row/.style={after row=\bottomrule}
+]{Divide&Conquer/results/times_kadane.csv}
 \caption{Runtime results for Kadane's algorithm}
 \label{tab:kadane-runtime}
 \end{table}
 
-\begin{table}[ht]
+\begin{table}[H]
 \centering
-\begin{tabular}{r r}
- n & seconds \\
- \hline
- 1000 & 0.026056400034576654 \\
- 2000 & 0.10477990005165339 \\
- 5000 & 1.2817615000531077 \\
-\end{tabular}
+\pgfplotstabletypeset[
+  col sep=comma,
+  string type,
+  columns={n,seconds},
+  every head row/.style={before row=\toprule, after row=\midrule},
+  every last row/.style={after row=\bottomrule}
+]{Divide&Conquer/results/times_naive.csv}
 \caption{Runtime results for naive algorithm}
 \label{tab:naive-runtime}
 \end{table}
 
-\begin{table}[ht]
+\begin{table}[H]
 \centering
-\begin{tabular}{r r r r r r}
- pattern & start_day & end_day & window_days & total_profit & avg_daily \\
- \hline
- mixed & 14 & 363 & 350 & 983.51 & 2.81 \\
- volatile & 193 & 356 & 164 & 714.74 & 4.36 \\
- positive_bias & 0 & 364 & 365 & 2792.04 & 7.65 \\
- negative_bias & 198 & 202 & 5 & 14.48 & 2.90 \\
- alternating & 192 & 356 & 165 & 78.97 & 0.48 \\
-\end{tabular}
+\pgfplotstabletypeset[
+  col sep=comma,
+  string type,
+  columns={pattern,start day,end day,window days,total profit,avg daily},
+  every head row/.style={before row=\toprule, after row=\midrule},
+  every last row/.style={after row=\bottomrule}
+]{Divide&Conquer/results/profit_windows.csv}
 \caption{Maximum profit windows for different data patterns}
 \label{tab:profit-windows}
 \end{table}

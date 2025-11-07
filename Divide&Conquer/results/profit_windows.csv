@@ -1,6 +1,6 @@
-pattern,start_day,end_day,window_days,total_profit,avg_daily
+pattern,start day,end day,window days,total profit,avg daily
 mixed,14,363,350,983.51,2.81
 volatile,193,356,164,714.74,4.36
-positive_bias,0,364,365,2792.04,7.65
-negative_bias,198,202,5,14.48,2.90
+positive bias,0,364,365,2792.04,7.65
+negative bias,198,202,5,14.48,2.90
 alternating,192,356,165,78.97,0.48

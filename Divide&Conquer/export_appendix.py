@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import csv
 import sys
 from pathlib import Path
-from typing import Iterable, List
 
 # Handle imports whether run as script or module
 if __name__ == "__main__" and __package__ is None:
@@ -29,57 +27,6 @@ def _listing_block(source: Path, caption: str, label: str) -> str:
         + code
         + "\n\\end{lstlisting}\n"
     )
-
-
-def _csv_preview(path: Path, limit: int = 5) -> tuple[List[str], List[List[str]]]:
-    """Read first few rows of CSV file."""
-    if not path.exists():
-        return [], []
-    with path.open("r", encoding="utf-8", newline="") as handle:
-        reader = csv.reader(handle)
-        header = next(reader, [])
-        rows = []
-        for row in reader:
-            rows.append(row)
-            if len(rows) >= limit:
-                break
-    return header, rows
-
-
-def _table_block(
-    header: List[str],
-    rows: List[List[str]],
-    caption: str,
-    label: str,
-) -> str:
-    """Generate LaTeX table block."""
-    if not header:
-        return f"% data missing for {label}\n"
-    alignment = " ".join("r" for _ in header)
-    lines = [
-        "\\begin{table}[ht]",
-        "\\centering",
-        f"\\begin{{tabular}}{{{alignment}}}",
-        " " + " & ".join(header) + " \\\\",
-        " \\hline",
-    ]
-    for row in rows:
-        lines.append(" " + " & ".join(row) + " \\\\")
-    lines.extend(
-        [
-            "\\end{tabular}",
-            f"\\caption{{{caption}}}",
-            f"\\label{{{label}}}",
-            "\\end{table}",
-            "",
-        ]
-    )
-    return "\n".join(lines)
-
-
-def _write(path: Path, content: Iterable[str]) -> None:
-    """Write content to file."""
-    path.write_text("\n".join(content), encoding="utf-8")
 
 
 def main() -> None:
@@ -153,38 +100,64 @@ def main() -> None:
     )
     (appendix / "figs.tex").write_text(figs_content, encoding="utf-8")
 
-    # Generate tables from results
-    results_dir = root / "results"
-    tables = []
-    datasets = [
-        (
-            results_dir / "times_dc.csv",
-            "Runtime results for divide-and-conquer algorithm",
-            "tab:dc-runtime",
-        ),
-        (
-            results_dir / "times_kadane.csv",
-            "Runtime results for Kadane's algorithm",
-            "tab:kadane-runtime",
-        ),
-        (
-            results_dir / "times_naive.csv",
-            "Runtime results for naive algorithm",
-            "tab:naive-runtime",
-        ),
-        (
-            results_dir / "profit_windows.csv",
-            "Maximum profit windows for different data patterns",
-            "tab:profit-windows",
-        ),
+    # Generate tables from results using pgfplotstable (reads CSV directly)
+    tables_content = [
+        "% Run `python benchmark.py` from within Divide&Conquer folder before including these tables.",
+        "",
+        "\\begin{table}[H]",
+        "\\centering",
+        "\\pgfplotstabletypeset[",
+        "  col sep=comma,",
+        "  string type,",
+        "  columns={n,seconds},",
+        "  every head row/.style={before row=\\toprule, after row=\\midrule},",
+        "  every last row/.style={after row=\\bottomrule}",
+        "]{Divide&Conquer/results/times_dc.csv}",
+        "\\caption{Runtime results for divide-and-conquer algorithm}",
+        "\\label{tab:dc-runtime}",
+        "\\end{table}",
+        "",
+        "\\begin{table}[H]",
+        "\\centering",
+        "\\pgfplotstabletypeset[",
+        "  col sep=comma,",
+        "  string type,",
+        "  columns={n,seconds},",
+        "  every head row/.style={before row=\\toprule, after row=\\midrule},",
+        "  every last row/.style={after row=\\bottomrule}",
+        "]{Divide&Conquer/results/times_kadane.csv}",
+        "\\caption{Runtime results for Kadane's algorithm}",
+        "\\label{tab:kadane-runtime}",
+        "\\end{table}",
+        "",
+        "\\begin{table}[H]",
+        "\\centering",
+        "\\pgfplotstabletypeset[",
+        "  col sep=comma,",
+        "  string type,",
+        "  columns={n,seconds},",
+        "  every head row/.style={before row=\\toprule, after row=\\midrule},",
+        "  every last row/.style={after row=\\bottomrule}",
+        "]{Divide&Conquer/results/times_naive.csv}",
+        "\\caption{Runtime results for naive algorithm}",
+        "\\label{tab:naive-runtime}",
+        "\\end{table}",
+        "",
+        "\\begin{table}[H]",
+        "\\centering",
+        "\\pgfplotstabletypeset[",
+        "  col sep=comma,",
+        "  string type,",
+        "  columns={pattern,start day,end day,window days,total profit,avg daily},",
+        "  every head row/.style={before row=\\toprule, after row=\\midrule},",
+        "  every last row/.style={after row=\\bottomrule}",
+        "]{Divide&Conquer/results/profit_windows.csv}",
+        "\\caption{Maximum profit windows for different data patterns}",
+        "\\label{tab:profit-windows}",
+        "\\end{table}",
+        "",
     ]
-    for path, caption, label in datasets:
-        header, rows = _csv_preview(path)
-        tables.append(_table_block(header, rows, caption, label))
-    tables.insert(
-        0, "% Run `python benchmark.py` from within Divide&Conquer folder before including these tables."
-    )
-    _write(appendix / "tables.tex", tables)
+    (appendix / "tables.tex").write_text("\n".join(tables_content), encoding="utf-8")
 
     print("LaTeX appendix assets generated in 'appendix/' directory.")
 

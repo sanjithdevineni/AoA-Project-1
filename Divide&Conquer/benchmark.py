@@ -41,10 +41,10 @@ def generate_profit_data(
     elif pattern == "volatile":
         # High variance with larger swings
         return [prng.uniform(-50.0, 50.0) for _ in range(n)]
-    elif pattern == "positive_bias":
+    elif pattern == "positive bias":
         # More positive than negative (profitable business)
         return [prng.uniform(-5.0, 20.0) for _ in range(n)]
-    elif pattern == "negative_bias":
+    elif pattern == "negative bias":
         # More negative than positive (struggling business)
         return [prng.uniform(-20.0, 5.0) for _ in range(n)]
     elif pattern == "alternating":
@@ -280,7 +280,7 @@ def _plot_comparison(
 def run_profit_window_analysis(figures: Path, results: Path) -> None:
     """Analyze how max profit window changes with different data patterns."""
     n = 365  # One year of daily data
-    patterns = ["mixed", "volatile", "positive_bias", "negative_bias", "alternating"]
+    patterns = ["mixed", "volatile", "positive bias", "negative bias", "alternating"]
 
     rows = []
     for pattern in patterns:
@@ -293,7 +293,7 @@ def run_profit_window_analysis(figures: Path, results: Path) -> None:
 
     _write_csv(
         results / "profit_windows.csv",
-        ("pattern", "start_day", "end_day", "window_days", "total_profit", "avg_daily"),
+        ("pattern", "start day", "end day", "window days", "total profit", "avg daily"),
         rows,
     )
 
